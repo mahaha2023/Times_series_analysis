@@ -1,0 +1,219 @@
+---
+title: "Projet séries temporelles"
+author: "MAHAMAT HASSAN ISSA"
+date: "2023-05-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(forecast)
+library(caschrono)
+sncf=read.table("C:/Users/HP/Desktop/series temporelles/sncf.csv",header = TRUE,sep = ";")
+train=as.vector(t(as.matrix(sncf[,2:13])))
+X=ts(train,start = c(1963, 1), frequency = 12)
+class(sncf)
+class(X)
+length(X)
+start(X)
+end(X)
+frequency(X)
+deltat(X)
+```
+
+```{r}
+# On regarde les données sncf
+View(sncf)
+summary(sncf)
+
+
+```
+
+Pas de données maquantes ni incoherentes
+
+```{r}
+plot(X,ylab="X")
+```
+
+la serie semble avoir une tendance qui augmente.
+
+```{r}
+monthplot(X,ylab="passagers mensuels")
+```
+
+En l'absence d'effet saisonnier, les 12 chronogrammes mensuels seraient à peu près identiques, ce qui n'est pas le cas ici. On remarque notamment un interet pour le mot-clef plus fort en été et Décembre (périodes des vacances scolaires).Le nombre de passager augmente durant les vacances scolaires.
+
+```{r}
+lag.plot(X,lags=12,layout=c(3,4),do.lines=FALSE)
+```
+
+En observant un lag de 12 mois,on vois l'influence du passé sur la série.
+
+```{r}
+# La série est elle Additive ou Multiplicative ?
+
+# Tout d’abord reprenons le graphe.
+plot(X,ylab="X")
+```
+
+L'amplitude de la composante saisonnière augmente au fil des années, si la série était additive cette composante serait stationnaire (indépendamment de l'effet de la tendance) La série est donc Multiplicative.
+
+```{r}
+decompose_X = decompose(X, "multiplicative")
+plot(decompose_X)
+```
+
+On constate que l'amplitude de la composante saisonnière et du bruit ne sont plus constante au cours du temps, elles varient au cours du temps proportionnellement à la tendance.
+
+```{r}
+Box.test(X,lag=20,type="Box-Pierce")
+```
+
+p-value inferieur à 5%, on rejette H0 donc on est pas en presence d'un bruit blanc.
+
+```{r}
+#  Modélisation
+
+# Analyse des Corrélations
+
+# On affiche le graphique ACF pour rechercher le coéfficient AR
+acf(diff(diff(log(X),lag=12,difference=1),lag=1,difference=1))
+```
+
+ainsi en aplliquant le critère vu en cours, on choisit p=1
+
+```{r}
+# On affiche le graphique PACF pour rechercher le coéfficient MA
+pacf(diff(diff(log(X),lag=12,difference=1),lag=1,difference=1))
+```
+
+ainsi en aplliquant le critère vu en cours, on choisit q=1
+
+```{r}
+# Choix du Modèle Manuellement
+md1=arima(diff(diff(log(X),lag=1,difference=1),lag=1,difference=1),order=c(1,0,1))
+t_stat(md1)
+
+```
+
+Les valeurs des test ne confirme qu'il faut changer l'ordre.
+
+Choix avec d'autres coefficient. Apres avoir chercher de façon empirique, voici le meilleur modèle ARMA en manuel. Ce modèle à le meilleur compromis entre la simplicité et les résultats au test.
+
+```{r}
+md2=arima(diff(diff(log(X),lag=1,difference=1),lag=1,difference=1),order=c(3,0,1))
+```
+
+On peut regarder la matrice de correlations des estimateurs.
+
+```{r}
+cor.arma(md2)
+```
+
+Tous les coéfficients sont bien inferieurs à 0.9
+
+```{r}
+t_stat(md2)
+```
+
+Les coéfficients ont une p.val faible.
+
+```{r}
+summary(md2)
+```
+
+AIC =-190
+
+```{r}
+checkresiduals(md2)
+```
+
+Les résidus semblent se comporter comme un bruit blanc Le test de Ljung-Box test a une très faible une p-value.
+
+```{r}
+## Modele Auto Arima
+
+# On peut sélectionner un modèle automatique de 2 façons : Premièrement avec la fonction armaselect
+armaselect(diff(diff(log(X),lag=12,difference=1),lag=1,
+                difference=1))
+```
+
+Ou avec la fonction auto.arima
+
+```{r}
+mda=auto.arima(diff(diff(log(X),lag=12,difference=1),lag=1,
+                    difference=1))
+summary(mda)
+```
+
+AIC=-637
+
+on obseve les résidus.
+
+```{r}
+checkresiduals(mda)
+```
+
+Le modèle semble être cohérent. Les résidus semblent se comporter comme un bruit blanc gaussien. Cependant le test de Ljung-Box test à une p-value de 0.22 essayons d'améliorer ce résultat. Pour se faire essayons de modéliser la série à l'aide d'un modèle SARMA.
+
+## Modèle Auto SARMA
+
+Nous recherchons par la suite un modèle SARIMA en mode automatique. #Pour cela on conserve la saisonnalité et on applique la fonction Auto.arima .
+
+```{r}
+mdsa=auto.arima(diff(log(X),lag=1, difference=1))
+summary(mdsa) 
+```
+
+AIC=-637
+
+```{r}
+checkresiduals(mdsa)
+```
+
+Le modèle semble être cohérent. Les résidus semblent se comporter comme un bruit blanc gaussien Cependant le test de Ljung-Box test à une p-value de 0.17.
+
+```{r}
+X6379=window(X,start=1963,end=c(1979,12))
+X6379
+
+```
+
+
+```{r}
+X80=window(X,start=1980)
+X80
+```
+
+
+
+##  Prédiction avec le modèle ARMA
+```{r}
+fc2=forecast(md2, h = 12)
+plot(fc2)
+points(X80,type="l",col="darkgreen",lwd=2)
+legend("top",c("Valeurs observées","Prédictions"),col=c("black","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+
+
+Nous observons la prévision sur 1 an avec un seuil à 95% et 80%.
+
+
+## Prédiction avec le modèle SARMA
+
+
+```{r}
+fcsa=forecast(mdsa, h = 12)
+plot(fcsa)
+points(X80,type="l",col="darkgreen",lwd=2)
+legend("top",c("Valeurs observées","Prédictions"),col=c("black","blue"),lty=rep(1,2),lwd = rep(2,2))
+```
+
+
+Nous observons la prévision sur 1 an avec un seuil à 95% et 80%.
+
+## Conclusion
+Cette étude fu très intéressante nous avons dû retravailler la série notamment en la transformant afin de supprimer les effets de saisonnalité.
+
+Nous obtenons un Modèle SARMA qui prédit mieux sur 1an par rapport au modèle ARMA.
+
+ 
